@@ -19,3 +19,6 @@ TPOT approaching threshold → multiplicatively decrease chunk size (e.g. halve 
 Basis from Sarathi-Serve paper:
 "The system performance can be further enhanced by dynamically varying the token budget based on workload characteristics. We leave this exploration for future work."
 
+1. Find where current static chunk size is configured and consumed. Add hooks to get key metrics.
+2. Create a small controller component that periodically reads those metrics and maintains a mutable chunk size. This should encode the AIMD style rules
+3. Connect current static chunk size calls with the controller's API
