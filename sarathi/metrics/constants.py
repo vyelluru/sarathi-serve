@@ -43,12 +43,14 @@ class CpuOperationMetrics(enum.Enum):
 
 
 class SequenceMetricsTimeDistributions(enum.Enum):
+    #congestion indicator
     REQUEST_E2E_TIME = "request_e2e_time"
     REQUEST_E2E_TIME_NORMALIZED = "request_e2e_time_normalized"
     REQUEST_E2E_TIME_PIECEWISE_NORMALIZED = "request_e2e_time_piecewise_normalized"
     REQUEST_EXECUTION_TIME = "request_execution_time"
     REQUEST_EXECUTION_TIME_NORMALIZED = "request_execution_time_normalized"
     REQUEST_PREEMPTION_TIME = "request_preemption_time"
+    #scheduler congestion indicator
     REQUEST_SCHEDULING_DELAY = "request_scheduling_delay"
     REQUEST_EXECUTION_PLUS_PREEMPTION_TIME = "request_execution_plus_preemption_time"
     REQUEST_EXECUTION_PLUS_PREEMPTION_TIME_NORMALIZED = (
@@ -90,6 +92,7 @@ class SequenceMetricsHistogram(enum.Enum):
 
 
 class BatchMetricsCountDistribution(enum.Enum):
+    #if these trend upward, it means that the system is getting congested
     BATCH_NUM_TOKENS = "batch_num_tokens"
     BATCH_NUM_PREFILL_TOKENS = "batch_num_prefill_tokens"
     BATCH_NUM_DECODE_TOKENS = "batch_num_decode_tokens"
@@ -97,11 +100,13 @@ class BatchMetricsCountDistribution(enum.Enum):
 
 
 class BatchMetricsTimeDistribution(enum.Enum):
+    #if this trend upward, it means that the system is getting congested
     BATCH_EXECUTION_TIME = "batch_execution_time"
     INTER_BATCH_DELAY = "inter_batch_delay"
 
 
 class CompletionMetricsTimeSeries(enum.Enum):
+    #if this trend upward, it means that the system is getting congested
     REQUEST_ARRIVAL = "request_arrival"
     REQUEST_COMPLETION = "request_completion"
     PREFILL_COMPLETIONS = "prefill_completion"

@@ -22,3 +22,7 @@ Basis from Sarathi-Serve paper:
 1. Find where current static chunk size is configured and consumed. Add hooks to get key metrics.
 2. Create a small controller component that periodically reads those metrics and maintains a mutable chunk size. This should encode the AIMD style rules
 3. Connect current static chunk size calls with the controller's API
+    You don’t have to create a separate thread; you can:
+    Add them inside AsyncLLMEngine.engine_step / run_engine_loop (async, but you’re just updating Python state each loop).
+
+chunk_size_controller.py is the main file w our logic.

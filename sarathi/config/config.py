@@ -212,6 +212,7 @@ class SimpleChunkingSchedulerConfig(BaseSchedulerConfig):
     )
 
     def get_max_num_batched_tokens(self, max_model_len: int):
+        #HERE - CHUNK SIZE SHOULD BE COMING FROM THE CONTROLLER
         return self.chunk_size
 
     @staticmethod
@@ -268,6 +269,7 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
         if self.enable_dynamic_chunking_schedule:
             return self.high_chunk_size
         else:
+            #HERE - CHUNK SIZE SHOULD BE COMING FROM THE CONTROLLER
             return self.chunk_size
 
     @staticmethod

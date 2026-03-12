@@ -340,6 +340,22 @@ class AsyncLLMEngine(LLMEngine):
 
         request_outputs = await self.engine.step_async()
 
+        # After one synchronous engine iteration completes, update the runtime
+        # chunk size controller, which lives on the underlying BaseLLMEngine.
+        try:
+            base_engine = getattr(self.engine, "engine", None)
+            if base_engine is not None and hasattr(base_engine, "chunk_controller"):
+                controller = base_engine.chunk_controller
+                controller.update()
+                scheduler = getattr(base_engine, "scheduler", None)
+                if scheduler is not None:
+                    if getattr(scheduler, "enable_dynamic_chunking_schedule", False):
+                        pass
+                    elif hasattr(scheduler, "chunk_size"):
+                        scheduler.chunk_size = controller.chunk_size
+        except Exception:
+            logger.exception("Chunk size controller update failed")
+
         # Put the outputs into the corresponding streams.
         for request_output in request_outputs:
             self._request_tracker.process_request_output(

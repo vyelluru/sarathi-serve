@@ -3,7 +3,10 @@ import logging
 import numpy as np
 import pandas as pd
 import plotly_express as px
-import wandb
+try:
+    import wandb  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    wandb = None
 from ddsketch.ddsketch import DDSketch
 
 logger = logging.getLogger(__name__)

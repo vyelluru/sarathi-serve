@@ -86,6 +86,7 @@ class SarathiScheduler(BaseScheduler):
             assert request_stage_idx < len(self._chunk_sizes)
             chunk_size = self._chunk_sizes[request_stage_idx]
         else:
+            #HERE - ADD A hook to get the current chunk size from the controller
             chunk_size = self.chunk_size
 
         next_num_tokens = min(

@@ -21,6 +21,7 @@ from sarathi.core.scheduler.scheduler_registry import SchedulerRegistry
 from sarathi.core.sequence_manager.engine_sequence_manager import EngineSequenceManager
 from sarathi.engine.ray_utils import RayWorker, initialize_cluster, ray
 from sarathi.logger import init_logger
+from sarathi.controller.chunk_size_controller import ChunkSizeController
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
 from sarathi.metrics.metrics_store import MetricsStore
@@ -79,6 +80,11 @@ class BaseLLMEngine:
             config.replica_config,
             config.model_config,
             config.metrics_config,
+        )
+
+        self.chunk_controller = ChunkSizeController(
+            initial_chunk_size=config.scheduler_config.chunk_size,
+            metrics_store=self.metrics_store,
         )
 
         self.worker_map: Dict[ModelParallelRank, int] = {}
@@ -281,6 +287,7 @@ class BaseLLMEngine:
             batch_start_time=start_time,
             batch_end_time=end_time,
         )
+
         all_request_outputs = self.seq_manager.generate_request_outputs(
             ignored_seqs, seq_metadata_list
         )

@@ -10,7 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import plotly.express as px
 import torch
-import wandb
+try:
+    import wandb  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    wandb = None
 
 from sarathi.config import MetricsConfig, ModelConfig, ReplicaConfig
 from sarathi.core.datatypes.request_output import RequestOutput

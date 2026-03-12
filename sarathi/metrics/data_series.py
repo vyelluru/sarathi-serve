@@ -3,7 +3,10 @@ from collections import defaultdict, deque
 
 import pandas as pd
 import plotly_express as px
-import wandb
+try:
+    import wandb  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    wandb = None
 
 logger = logging.getLogger(__name__)
 
