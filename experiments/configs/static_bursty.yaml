@@ -1,0 +1,18 @@
+output_dir: "experiments/results/static_bursty"
+
+scheduler_config:
+  type: "SARATHI"
+  chunk_size: 512
+  max_num_seqs: 64
+  controller_type: "NONE"
+
+request_generator_config:
+  type: "SYNTHETIC"
+  num_requests: 500
+  length_generator_config:
+    type: "TRACE"
+    trace_file: "traces/bursty_trace.csv"
+    max_tokens: 2048
+  interval_generator_config:
+    type: "TRACE"
+    trace_file: "traces/bursty_trace.csv"

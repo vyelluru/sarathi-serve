@@ -10,7 +10,7 @@ if ROOT not in sys.path:
 from sarathi.controller.chunk_size_controller import (
     ChunkSizeController,
     ChunkSizeControllerConfig,
-    CongestionP95Snapshot,
+    MetricsSnapshot,
 )
 
 
@@ -44,13 +44,14 @@ class DummyBaseEngine:
         self.scheduler = DummyScheduler(chunk_size=initial_chunk_size)
 
 
-def _make_snapshot(delay_s: float) -> CongestionP95Snapshot:
-    return CongestionP95Snapshot(
+def _make_snapshot(delay_s: float) -> MetricsSnapshot:
+    return MetricsSnapshot(
         timestamp_s=0.0,
-        request_scheduling_delay_p95_s=delay_s,
-        batch_execution_time_p95_s=None,
-        inter_batch_delay_p95_s=None,
+        scheduling_delay_p95_s=delay_s,
         decode_token_time_p95_s=None,
+        batch_exec_time_p95_s=None,
+        inter_batch_delay_p95_s=None,
+        decode_token_time_ewma_s=None,
     )
 
 
@@ -61,7 +62,7 @@ def _apply_wiring_once(base_engine: DummyBaseEngine) -> None:
     """
     controller = base_engine.chunk_controller
     # Pretend one engine iteration completed and metrics are available.
-    controller.snapshot_p95 = lambda: _make_snapshot(0.005)  # type: ignore[assignment]
+    controller._collect_snapshot = lambda: _make_snapshot(0.005)  # type: ignore[assignment]
     controller.update()
 
     scheduler = base_engine.scheduler

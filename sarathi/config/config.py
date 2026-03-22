@@ -7,7 +7,7 @@ from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
 from sarathi.logger import init_logger
 from sarathi.transformers_utils.config import get_config
-from sarathi.types import AttentionBackend, ResourceMapping, SchedulerType
+from sarathi.types import AttentionBackend, ControllerType, ResourceMapping, SchedulerType
 from sarathi.utils.hf_utils import get_and_verify_dtype, get_and_verify_max_len
 
 logger = init_logger(__name__)
@@ -246,6 +246,10 @@ class FasterTransformerSchedulerConfig(BaseSchedulerConfig):
 class SarathiSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = field(
         default=512, metadata={"help": "Size of each chunk for Sarathi scheduler."}
+    )
+    controller_type: ControllerType = field(
+        default=ControllerType.AIMD,
+        metadata={"help": "Chunk size controller strategy: NONE (static), AIMD, or PID."},
     )
     enable_dynamic_chunking_schedule: bool = field(
         default=False, metadata={"help": "Enable dynamic chunking schedule."}

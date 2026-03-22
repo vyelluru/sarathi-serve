@@ -342,17 +342,19 @@ class AsyncLLMEngine(LLMEngine):
 
         # After one synchronous engine iteration completes, update the runtime
         # chunk size controller, which lives on the underlying BaseLLMEngine.
+        # When controller_type=NONE (static baseline) chunk_controller is None
+        # and this block is skipped entirely, preserving original behavior.
         try:
             base_engine = getattr(self.engine, "engine", None)
-            if base_engine is not None and hasattr(base_engine, "chunk_controller"):
-                controller = base_engine.chunk_controller
-                controller.update()
-                scheduler = getattr(base_engine, "scheduler", None)
-                if scheduler is not None:
-                    if getattr(scheduler, "enable_dynamic_chunking_schedule", False):
-                        pass
-                    elif hasattr(scheduler, "chunk_size"):
-                        scheduler.chunk_size = controller.chunk_size
+            if base_engine is not None:
+                controller = getattr(base_engine, "chunk_controller", None)
+                if controller is not None:
+                    controller.update()
+                    scheduler = getattr(base_engine, "scheduler", None)
+                    if scheduler is not None:
+                        if not getattr(scheduler, "enable_dynamic_chunking_schedule", False):
+                            if hasattr(scheduler, "chunk_size"):
+                                scheduler.chunk_size = controller.chunk_size
         except Exception:
             logger.exception("Chunk size controller update failed")
 

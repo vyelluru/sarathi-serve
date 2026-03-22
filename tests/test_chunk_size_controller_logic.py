@@ -8,37 +8,40 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from sarathi.controller.chunk_size_controller import (
+    AIMDChunkSizeController,
+    MetricsSnapshot,
+    # backward-compat aliases
     ChunkSizeController,
     ChunkSizeControllerConfig,
-    CongestionP95Snapshot,
 )
 
 
-class FakeController(ChunkSizeController):
+class FakeController(AIMDChunkSizeController):
     """
     Controller variant that bypasses MetricsStore and lets tests inject
-    synthetic p95 snapshots.
+    synthetic snapshots directly.
     """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._snap: CongestionP95Snapshot | None = None
+        self._snap: MetricsSnapshot | None = None
 
-    def set_snapshot(self, snap: CongestionP95Snapshot) -> None:
+    def set_snapshot(self, snap: MetricsSnapshot) -> None:
         self._snap = snap
 
-    def snapshot_p95(self) -> CongestionP95Snapshot:  # type: ignore[override]
+    def _collect_snapshot(self) -> MetricsSnapshot:  # type: ignore[override]
         assert self._snap is not None
         return self._snap
 
 
-def _make_snapshot(delay_s: float) -> CongestionP95Snapshot:
-    return CongestionP95Snapshot(
+def _make_snapshot(delay_s: float) -> MetricsSnapshot:
+    return MetricsSnapshot(
         timestamp_s=0.0,
-        request_scheduling_delay_p95_s=delay_s,
-        batch_execution_time_p95_s=None,
-        inter_batch_delay_p95_s=None,
+        scheduling_delay_p95_s=delay_s,
         decode_token_time_p95_s=None,
+        batch_exec_time_p95_s=None,
+        inter_batch_delay_p95_s=None,
+        decode_token_time_ewma_s=None,
     )
 
 

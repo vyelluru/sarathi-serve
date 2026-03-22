@@ -34,6 +34,12 @@ class RequestLengthGeneratorType(Enum):
     FIXED = "FIXED"
 
 
+class ControllerType(Enum):
+    NONE = "NONE"   # static chunk size, original sarathi-serve behavior
+    AIMD = "AIMD"   # additive increase / multiplicative decrease
+    PID  = "PID"    # proportional-integral-derivative
+
+
 class AttentionBackend(Enum):
     FLASHINFER = "FLASHINFER"
     NO_OP = "NO_OP"

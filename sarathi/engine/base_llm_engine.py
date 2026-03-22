@@ -21,7 +21,14 @@ from sarathi.core.scheduler.scheduler_registry import SchedulerRegistry
 from sarathi.core.sequence_manager.engine_sequence_manager import EngineSequenceManager
 from sarathi.engine.ray_utils import RayWorker, initialize_cluster, ray
 from sarathi.logger import init_logger
-from sarathi.controller.chunk_size_controller import ChunkSizeController
+from sarathi.controller.chunk_size_controller import (
+    AIMDChunkSizeController,
+    AIMDConfig,
+    BaseChunkSizeController,
+    PIDChunkSizeController,
+    PIDConfig,
+)
+from sarathi.types import ControllerType
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
 from sarathi.metrics.metrics_store import MetricsStore
@@ -82,9 +89,8 @@ class BaseLLMEngine:
             config.metrics_config,
         )
 
-        self.chunk_controller = ChunkSizeController(
-            initial_chunk_size=config.scheduler_config.chunk_size,
-            metrics_store=self.metrics_store,
+        self.chunk_controller = self._build_controller(
+            config.scheduler_config, self.metrics_store
         )
 
         self.worker_map: Dict[ModelParallelRank, int] = {}
@@ -123,6 +129,27 @@ class BaseLLMEngine:
         self.new_seqs: List[Sequence] = []
 
         self._run_workers("wait_till_ready")
+
+    @staticmethod
+    def _build_controller(
+        scheduler_config, metrics_store
+    ) -> Optional[BaseChunkSizeController]:
+        """Instantiate the right chunk size controller based on scheduler config."""
+        ct = getattr(scheduler_config, "controller_type", ControllerType.NONE)
+        initial = scheduler_config.chunk_size
+
+        if ct == ControllerType.AIMD:
+            return AIMDChunkSizeController(
+                initial_chunk_size=initial,
+                metrics_store=metrics_store,
+            )
+        if ct == ControllerType.PID:
+            return PIDChunkSizeController(
+                initial_chunk_size=initial,
+                metrics_store=metrics_store,
+            )
+        # ControllerType.NONE — static baseline, no controller
+        return None
 
     def _init_zmq_sockets(self):
         self.zmq_context = zmq.Context()

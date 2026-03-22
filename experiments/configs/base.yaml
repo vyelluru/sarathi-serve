@@ -1,0 +1,29 @@
+# Base config shared by all experiments.
+# Override scheduler_config.controller_type and request_generator_config
+# in the per-experiment configs.
+
+model_config:
+  model: "meta-llama/Meta-Llama-3-8B-Instruct"
+  dtype: "float16"
+  max_model_len: 2048
+
+cache_config:
+  block_size: 16
+
+parallel_config:
+  pipeline_parallel_size: 1
+  tensor_parallel_size: 1
+
+worker_config:
+  gpu_memory_utilization: 0.9
+  attention_backend: "FLASHINFER"
+
+metrics_config:
+  write_metrics: true
+  keep_individual_batch_metrics: true
+  enable_chrome_trace: false
+
+scheduler_config:
+  type: "SARATHI"
+  chunk_size: 512
+  max_num_seqs: 64
