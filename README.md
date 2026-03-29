@@ -1,12 +1,12 @@
 # Sarathi-Serve
 
-Sarathi-Serve is a high througput and low-latency LLM serving framework. Please refer to our [OSDI'24 paper](https://www.usenix.org/conference/osdi24/presentation/agrawal) for more details. 
+Sarathi-Serve is a high througput and low-latency LLM serving framework. Please refer to our [OSDI'24 paper](https://www.usenix.org/conference/osdi24/presentation/agrawal) for more details.
 
 ## Setup
 
 ### Setup CUDA
 
-Sarathi-Serve has been tested with CUDA 12.3 on H100 and A100 GPUs.
+Sarathi-Serve has been tested with CUDA 12.3 on H100 and A100 GPUs. The install builds custom CUDA extensions, so the CUDA toolkit must be installed and `CUDA_HOME` must point to it before running `pip install -e .`.
 
 ### Clone repository
 
@@ -23,10 +23,10 @@ wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforg
 bash Mambaforge-Linux-x86_64.sh # follow the instructions from there
 ```
 
-Create a Python 3.10 environment,
+Create a Python 3.10+ environment,
 
 ```sh
-mamba create -p ./env python=3.11  
+mamba create -p ./env python=3.10
 ```
 
 ### Install Sarathi-Serve

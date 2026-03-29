@@ -1,16 +1,167 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional, get_args, get_origin
+import torch
 
 from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
+from sarathi.config.utils import get_all_subclasses, get_inner_type, is_optional, is_subclass
 from sarathi.logger import init_logger
 from sarathi.transformers_utils.config import get_config
 from sarathi.types import AttentionBackend, ControllerType, ResourceMapping, SchedulerType
 from sarathi.utils.hf_utils import get_and_verify_dtype, get_and_verify_max_len
 
 logger = init_logger(__name__)
+
+
+def _coerce_enum_value(enum_cls: type[Enum], value: Any) -> Enum:
+    if isinstance(value, enum_cls):
+        return value
+
+    if isinstance(value, str):
+        normalized_value = value.upper()
+        if normalized_value in enum_cls.__members__:
+            return enum_cls[normalized_value]
+
+        for member in enum_cls:
+            if isinstance(member.value, str) and member.value.upper() == normalized_value:
+                return member
+
+    return enum_cls(value)
+
+
+def _resolve_poly_config_subclass(
+    base_cls: type[BasePolyConfig], type_value: Any
+) -> type[BasePolyConfig]:
+    for subclass in get_all_subclasses(base_cls):
+        subclass_type = subclass.get_type()
+        if type_value == subclass_type:
+            return subclass
+
+        if isinstance(type_value, str):
+            normalized_value = type_value.upper()
+            if isinstance(subclass_type, Enum):
+                if subclass_type.name == normalized_value:
+                    return subclass
+                if (
+                    isinstance(subclass_type.value, str)
+                    and subclass_type.value.upper() == normalized_value
+                ):
+                    return subclass
+            elif (
+                isinstance(subclass_type, str)
+                and subclass_type.upper() == normalized_value
+            ):
+                return subclass
+
+    raise ValueError(f"Invalid type '{type_value}' for {base_cls.__name__}.")
+
+
+def _load_poly_config_from_dict(
+    base_cls: type[BasePolyConfig], config_dict: dict[str, Any]
+) -> BasePolyConfig:
+    if not isinstance(config_dict, dict):
+        raise ValueError(
+            f"Expected a mapping for {base_cls.__name__}, got {type(config_dict).__name__}."
+        )
+    if "type" not in config_dict:
+        raise ValueError(f"Missing 'type' for {base_cls.__name__} config.")
+
+    subclass = _resolve_poly_config_subclass(base_cls, config_dict["type"])
+    subclass_config = {k: v for k, v in config_dict.items() if k != "type"}
+    return _load_dataclass_from_dict(subclass, subclass_config)
+
+
+def _coerce_config_value(field_type: Any, value: Any) -> Any:
+    if value is None:
+        return None
+
+    if is_optional(field_type):
+        return _coerce_config_value(get_inner_type(field_type), value)
+
+    origin = get_origin(field_type)
+    if origin is list:
+        (inner_type,) = get_args(field_type)
+        return [_coerce_config_value(inner_type, item) for item in value]
+    if origin is tuple:
+        inner_types = get_args(field_type)
+        if len(inner_types) == 2 and inner_types[1] is Ellipsis:
+            return tuple(_coerce_config_value(inner_types[0], item) for item in value)
+        return tuple(
+            _coerce_config_value(inner_type, item)
+            for inner_type, item in zip(inner_types, value)
+        )
+    if origin is dict:
+        key_type, value_type = get_args(field_type)
+        return {
+            _coerce_config_value(key_type, key): _coerce_config_value(value_type, item)
+            for key, item in value.items()
+        }
+
+    if isinstance(field_type, type) and issubclass(field_type, Enum):
+        return _coerce_enum_value(field_type, value)
+
+    if is_subclass(field_type, BasePolyConfig):
+        return _load_poly_config_from_dict(field_type, value)
+
+    if hasattr(field_type, "__dataclass_fields__"):
+        return _load_dataclass_from_dict(field_type, value)
+
+    return value
+
+
+def _load_dataclass_from_dict(cls: type[Any], config_dict: dict[str, Any]) -> Any:
+    if isinstance(config_dict, cls):
+        return config_dict
+    if not isinstance(config_dict, dict):
+        raise ValueError(
+            f"Expected a mapping for {cls.__name__}, got {type(config_dict).__name__}."
+        )
+
+    field_map = {field.name: field for field in fields(cls)}
+    unknown_fields = sorted(set(config_dict) - set(field_map))
+    if unknown_fields:
+        unknown_fields_str = ", ".join(unknown_fields)
+        raise ValueError(f"Unknown fields for {cls.__name__}: {unknown_fields_str}")
+
+    kwargs = {}
+    for field_info in fields(cls):
+        if field_info.name not in config_dict:
+            continue
+        kwargs[field_info.name] = _coerce_config_value(
+            field_info.type, config_dict[field_info.name]
+        )
+
+    return cls(**kwargs)
+
+
+def _serialize_config_value(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, torch.dtype):
+        return str(value)
+    if is_dataclass(value):
+        serialized_fields = {
+            field_info.name: _serialize_config_value(getattr(value, field_info.name))
+            for field_info in fields(value)
+        }
+        if isinstance(value, BasePolyConfig):
+            type_value = value.get_type()
+            serialized_type = type_value.value if isinstance(type_value, Enum) else type_value
+            return {"type": serialized_type, **serialized_fields}
+        return serialized_fields
+    if isinstance(value, list):
+        return [_serialize_config_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_serialize_config_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            _serialize_config_value(key): _serialize_config_value(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 @dataclass
@@ -394,18 +545,18 @@ class BaseEndpointConfig(ABC):
         )
 
     @classmethod
-    def create_from_cli_args(cls):
-        flat_config = create_flat_dataclass(cls).create_from_cli_args()
+    def create_from_cli_args(cls, args=None):
+        flat_config = create_flat_dataclass(cls).create_from_cli_args(args=args)
         instance = flat_config.reconstruct_original_dataclass()
         instance.__flat_config__ = flat_config
         return instance
 
-    def to_dict(self):
-        if not hasattr(self, "__flat_config__"):
-            logger.warning("Flat config not found. Returning the original config.")
-            return self.__dict__
+    @classmethod
+    def create_from_dict(cls, config_dict: dict[str, Any]):
+        return _load_dataclass_from_dict(cls, config_dict)
 
-        return self.__flat_config__.__dict__
+    def to_dict(self):
+        return _serialize_config_value(self)
 
     def create_system_config(self, replica_config: ReplicaConfig) -> SystemConfig:
         system_config = SystemConfig(

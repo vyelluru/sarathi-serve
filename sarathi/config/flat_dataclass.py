@@ -73,7 +73,7 @@ def reconstruct_original_dataclass(self) -> Any:
 
 
 @classmethod
-def create_from_cli_args(cls) -> Any:
+def create_from_cli_args(cls, args=None) -> Any:
     """
     This function is dynamically mapped to FlatClass as a class method.
     """
@@ -121,9 +121,9 @@ def create_from_cli_args(cls) -> Any:
                 help=help_text,
             )
 
-    args = parser.parse_args()
+    parsed_args = parser.parse_args(args=args)
 
-    return cls(**vars(args))
+    return cls(**vars(parsed_args))
 
 
 def create_flat_dataclass(input_dataclass: Any) -> Any:

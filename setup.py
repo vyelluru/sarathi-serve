@@ -159,8 +159,12 @@ def read_readme() -> str:
 
 def get_requirements() -> List[str]:
     """Get Python package dependencies from requirements.txt."""
+    requirements: List[str] = []
     with open(get_path("requirements.txt")) as f:
-        requirements = f.read().strip().split("\n")
+        for raw_line in f:
+            requirement = raw_line.split("#", 1)[0].strip()
+            if requirement:
+                requirements.append(requirement)
     return requirements
 
 
@@ -174,12 +178,13 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/microsoft/sarathi",
     classifiers=[
+        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "License :: OSI Approved :: Apache Software License",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     packages=setuptools.find_packages(exclude=("benchmarks", "csrc")),
-    python_requires=">=3.11",
+    python_requires=">=3.10",
     install_requires=get_requirements(),
     ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExtension},

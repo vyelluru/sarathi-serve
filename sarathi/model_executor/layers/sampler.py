@@ -1,16 +1,19 @@
 """A layer that samples the next tokens from the model's outputs."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
-import flashinfer.sampling
 import torch
 import torch.nn as nn
-from flashinfer.sampling import sampling_from_probs as flashinfer_sampling_from_probs
-from flashinfer.sampling import (
-    top_k_top_p_sampling_from_logits as flashinfer_top_k_top_p_sampling_from_logits,
-)
 
-from sarathi.core.datatypes.sampling_params import SamplingType
+try:
+    from flashinfer.sampling import sampling_from_probs as flashinfer_sampling_from_probs
+    from flashinfer.sampling import (
+        top_k_top_p_sampling_from_logits as flashinfer_top_k_top_p_sampling_from_logits,
+    )
+    HAS_FLASHINFER = True
+except Exception:  # pragma: no cover - depends on local runtime
+    HAS_FLASHINFER = False
+
 from sarathi.core.datatypes.sequence import (
     SamplerOutput,
     SamplerOutputs,
@@ -21,23 +24,10 @@ from sarathi.model_executor.parallel_utils.tensor_parallel import (
 )
 
 _SAMPLING_EPS = 1e-5
-_MAX_TOP_K_ROUND = 32
 
 
 class Sampler(nn.Module):
-    """Samples the next tokens from the model's outputs.
-
-    This layer does the following:
-    1. Discard the hidden states that are not used for sampling (i.e., all
-        tokens except the final one in each prompt).
-    2. Compute the logits for the next tokens.
-    3. Apply presence and frequency penalties.
-    4. Apply temperature scaling.
-    5. Apply top-p and top-k truncation.
-    6. Sample the next tokens.
-    Here, each sequence group within the batch can have different sampling
-    parameters (e.g., sampling method, temperature, top-p, top-k, etc.).
-    """
+    """Samples the next tokens from the model's outputs."""
 
     def __init__(self, embedding: torch.Tensor, vocab_size: int) -> None:
         super().__init__()
@@ -49,39 +39,38 @@ class Sampler(nn.Module):
         hidden_states: torch.Tensor,
         seq_metadata_list: List[SequenceMetadata],
     ) -> SamplerOutputs:
-        # Get the hidden states that we use for sampling.
         hidden_states = _prune_hidden_states(hidden_states, seq_metadata_list)
-
-        # Get the logits for the next tokens.
         logits = _get_logits(hidden_states, self.embedding, self.vocab_size)
 
-        # Apply temperature scaling.
         temperatures = _get_temperatures(seq_metadata_list)
         assert len(temperatures) == logits.shape[0]
-        if any(t != 1.0 for t in temperatures):
-            t = torch.tensor(temperatures, dtype=logits.dtype, device=logits.device)
-            # Use in-place division to avoid creating a new tensor.
-            logits.div_(t.unsqueeze(dim=1))
+        if any(temperature != 1.0 for temperature in temperatures):
+            temperature_tensor = torch.tensor(
+                temperatures, dtype=logits.dtype, device=logits.device
+            )
+            logits.div_(temperature_tensor.unsqueeze(dim=1))
 
-        # Apply top-p and top-k truncation.
         top_ps, top_ks = _get_top_p_top_k(seq_metadata_list, self.vocab_size)
         assert len(top_ps) == len(top_ks) == logits.shape[0]
-        do_top_p = any(p < 1.0 - _SAMPLING_EPS for p in top_ps)
-        do_top_k = any(k != self.vocab_size for k in top_ks)
+        do_top_p = any(top_p < 1.0 - _SAMPLING_EPS for top_p in top_ps)
+        do_top_k = any(top_k != self.vocab_size for top_k in top_ks)
 
         if not do_top_p and not do_top_k:
             probs = torch.softmax(logits, dim=-1, dtype=torch.float)
-            flashinfer_sample_result = _sample_with_flashinfer(probs).cpu()
+            sample_result = _sample(probs).cpu()
         else:
-            top_ps = torch.tensor(top_ps, dtype=logits.dtype, device=logits.device)
-            top_ks = torch.tensor(top_ks, dtype=torch.int, device=logits.device)
-
-            flashinfer_sample_result = _top_k_top_p_with_flashinfer(
-                logits, top_ks, top_ps
+            top_ps_tensor = torch.tensor(
+                top_ps, dtype=logits.dtype, device=logits.device
+            )
+            top_ks_tensor = torch.tensor(
+                top_ks, dtype=torch.int, device=logits.device
+            )
+            sample_result = _top_k_top_p_sample(
+                logits, top_ks_tensor, top_ps_tensor
             ).cpu()
 
         return [
-            SamplerOutput(seq_metadata_list[i].seq.seq_id, flashinfer_sample_result[i])
+            SamplerOutput(seq_metadata_list[i].seq.seq_id, sample_result[i])
             for i in range(len(seq_metadata_list))
         ]
 
@@ -89,12 +78,9 @@ class Sampler(nn.Module):
 def _get_logits(
     hidden_states: torch.Tensor, embedding: torch.Tensor, vocab_size: int
 ) -> torch.Tensor:
-    # Get the logits for the next tokens.
     logits = torch.matmul(hidden_states, embedding.t())
     logits = gather_from_tensor_model_parallel_region(logits)
-    # Remove paddings in vocab (if any).
-    logits = logits[:, :vocab_size]
-    return logits
+    return logits[:, :vocab_size]
 
 
 def _prune_hidden_states(
@@ -119,14 +105,10 @@ def _prune_hidden_states(
 
 
 def _get_temperatures(seq_metadata_list: List[SequenceMetadata]) -> List[float]:
-    # Collect the temperatures for the logits.
     temperatures: List[float] = []
     for seq_metadata in seq_metadata_list:
         temperature = seq_metadata.seq.sampling_params.temperature
         if temperature < _SAMPLING_EPS:
-            # NOTE: Zero temperature means deterministic sampling
-            # (i.e., greedy sampling or beam search).
-            # Set the temperature to 1 to avoid division by zero.
             temperature = 1.0
         temperatures.append(temperature)
     return temperatures
@@ -140,24 +122,61 @@ def _get_top_p_top_k(
     top_ks: List[int] = []
     for seq_metadata in seq_metadata_list:
         top_p = seq_metadata.seq.sampling_params.top_p
-        # k should not be greater than the vocab size.
         top_k = min(seq_metadata.seq.sampling_params.top_k, vocab_size)
-        # k=-1 means no truncation.
         top_k = vocab_size if top_k == -1 else top_k
         top_ps.append(top_p)
         top_ks.append(top_k)
     return top_ps, top_ks
 
 
-def _top_k_top_p_with_flashinfer(
+def _top_k_top_p_sample(
     logits: torch.Tensor, top_ks: torch.Tensor, top_ps: torch.Tensor
 ) -> torch.Tensor:
-    batch_next_token_ids = flashinfer_top_k_top_p_sampling_from_logits(
-        logits, top_ks, top_ps
-    )
-    return batch_next_token_ids.view(-1)
+    if HAS_FLASHINFER:
+        batch_next_token_ids = flashinfer_top_k_top_p_sampling_from_logits(
+            logits, top_ks, top_ps
+        )
+        return batch_next_token_ids.view(-1)
+
+    probs = torch.softmax(logits, dim=-1, dtype=torch.float)
+    filtered_probs = []
+
+    for row_idx in range(probs.shape[0]):
+        row_probs = probs[row_idx]
+        top_k = top_ks[row_idx].item()
+        top_p = top_ps[row_idx].item()
+
+        if top_k < row_probs.shape[0]:
+            topk_values, _ = torch.topk(row_probs, top_k)
+            threshold = topk_values[-1]
+            row_probs = torch.where(
+                row_probs >= threshold, row_probs, torch.zeros_like(row_probs)
+            )
+
+        if top_p < 1.0:
+            sorted_probs, sorted_indices = torch.sort(row_probs, descending=True)
+            cumulative_probs = torch.cumsum(sorted_probs, dim=0)
+            sorted_mask = cumulative_probs > top_p
+            sorted_mask[1:] = sorted_mask[:-1].clone()
+            sorted_mask[0] = False
+            sorted_probs = torch.where(
+                sorted_mask, torch.zeros_like(sorted_probs), sorted_probs
+            )
+            row_probs = torch.zeros_like(row_probs).scatter(
+                0, sorted_indices, sorted_probs
+            )
+
+        total_prob = row_probs.sum()
+        if total_prob <= 0:
+            row_probs = probs[row_idx]
+            total_prob = row_probs.sum()
+
+        filtered_probs.append(row_probs / total_prob)
+
+    return torch.multinomial(torch.stack(filtered_probs), num_samples=1).view(-1)
 
 
-def _sample_with_flashinfer(probs: torch.Tensor) -> torch.Tensor:
-    samples = flashinfer_sampling_from_probs(probs)
-    return samples
+def _sample(probs: torch.Tensor) -> torch.Tensor:
+    if HAS_FLASHINFER:
+        return flashinfer_sampling_from_probs(probs)
+    return torch.multinomial(probs, num_samples=1).view(-1)
