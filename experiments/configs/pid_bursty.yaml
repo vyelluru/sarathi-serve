@@ -14,5 +14,5 @@ request_generator_config:
     trace_file: "traces/bursty_trace.csv"
     max_tokens: 2048
   interval_generator_config:
-    type: "TRACE"
-    trace_file: "traces/bursty_trace.csv"
+    type: "POISSON"
+    qps: 4.0
