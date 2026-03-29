@@ -47,7 +47,7 @@ class BaseControllerConfig:
 @dataclass(frozen=True)
 class AIMDConfig(BaseControllerConfig):
     """AIMD-specific parameters."""
-    additive_increase: int = 16
+    additive_increase: int = 64
     multiplicative_decrease_factor: float = 0.75
     # Congestion thresholds (seconds)
     scheduling_delay_p95_threshold_s: float = 0.05
